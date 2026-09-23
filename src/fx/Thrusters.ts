@@ -44,7 +44,7 @@ export class Thrusters {
       vertexShader: /* glsl */ `
         attribute vec3 iPos; attribute vec3 iDir; attribute vec3 iCol; attribute vec4 iPrm; attribute float iLod;
         uniform vec3 uCamPos; uniform float uTime; uniform float uFogDensity;
-        varying vec2 vUv; varying vec3 vCol; varying float vBehind; varying float vCross;
+        varying vec2 vUv; varying vec3 vCol; varying float vBehind; varying float vCross; varying float vArms;
         void main(){
           vec3 toCam = uCamPos - iPos;
           float dist = length(toCam);
@@ -63,6 +63,7 @@ export class Thrusters {
           // cross flare arms extend the quad when seen from behind
           float arms = 1. + 2.2 * b * nearK;
           vCross = b * mix(.25, 1., nearK);
+          vArms = arms;
           vCol = iCol * inten * exp(-dist * uFogDensity * .5);
           vUv = position.xy * arms;
           vec4 mv = viewMatrix * vec4(iPos + vd * .4, 1.);
@@ -71,14 +72,17 @@ export class Thrusters {
           if(lodW < .002) gl_Position = vec4(2., 2., 2., 1.);
         }`,
       fragmentShader: /* glsl */ `
-        varying vec2 vUv; varying vec3 vCol; varying float vBehind; varying float vCross;
+        varying vec2 vUv; varying vec3 vCol; varying float vBehind; varying float vCross; varying float vArms;
         void main(){
           vec2 p = vUv;
           float r = length(p);
           float core = exp(-r * r * 30.);
-          float halo = exp(-r * 3.) * .45;
-          // four-point cross flare (horizontal + vertical), white-hot
-          float cross = (exp(-abs(p.y) * 38.) * exp(-abs(p.x) * 1.6) + exp(-abs(p.x) * 38.) * exp(-abs(p.y) * 1.6)) * vCross;
+          // round halo that fully fades before the quad border (r = 1 is the halo edge)
+          float halo = exp(-r * 3.) * .45 * smoothstep(1., .55, r);
+          // four-point cross flare (horizontal + vertical), tapering to zero at the arm tips
+          float tipX = smoothstep(vArms, vArms * .35, abs(p.x));
+          float tipY = smoothstep(vArms, vArms * .35, abs(p.y));
+          float cross = (exp(-abs(p.y) * 38.) * exp(-abs(p.x) * 1.6) * tipX + exp(-abs(p.x) * 38.) * exp(-abs(p.y) * 1.6) * tipY) * vCross;
           vec3 col = vCol * (core * 1.6 + halo);
           float lum = min(dot(vCol, vec3(.3333)), 14.);
           col += vec3(1.) * lum * (core * .35 + cross * .9);
